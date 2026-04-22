@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+
+Book2.xlsx
+
+Bloomberg_Data/Daily_Snapshots/
+Bloomberg_Data/Reports/

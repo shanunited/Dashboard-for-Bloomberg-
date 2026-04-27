@@ -1,4 +1,0 @@
-xlwings
-pandas
-schedule
-openpyxl

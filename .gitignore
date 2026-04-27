@@ -1,8 +1,11 @@
 .venv/
 __pycache__/
 *.pyc
+*.log
 
 Book2.xlsx
-
-Bloomberg_Data/Daily_Snapshots/
-Bloomberg_Data/Reports/
+Daily Data Files/
+backend/__pycache__/
+frontend/node_modules/
+frontend/dist/
+~$*.xlsx

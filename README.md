@@ -1,55 +1,206 @@
-# Bloomberg Automation
+# ULJK Bloomberg Ranking System
 
-Python pipeline for reading the daily Bloomberg metadata workbook, ranking stocks by index, and generating dated output files.
+Full-stack Bloomberg-style stock ranking dashboard for comparing two daily Excel files:
 
-## Current Status
+1. Yesterday file
+2. Today file
 
-Step 1 is complete.
-- Installed and verified `xlwings`, `pandas`, `schedule`, and `openpyxl` in the local `.venv`.
+The app computes Top 10 and Bottom 10 rank movement per `Index_Clean`, using `Index_Clean + Company Name` as the comparison key.
 
-Step 2 is partially complete.
-- Built [Bloomberg_Data/bloomberg_pull.py](</c:/Users/shant/Desktop/Shantanu Stuff/ULJK Stuff/Bloomberg Automation/Bloomberg_Data/bloomberg_pull.py>) to read the uploaded metadata workbook.
-- Recreated the ranking logic from the Excel `LET` formula using Python.
-- Output currently saves the Top 10 per `Index_Clean` into `Bloomberg_Data/Daily_Snapshots/YYYY_MM_DD.csv`.
-- Workbook path is intentionally left empty in code and must be passed with `--input` on the Bloomberg machine.
+## Stack
 
-## Runtime Note
+- Frontend: React + Vite
+- Backend: FastAPI
+- Excel processing: pandas + openpyxl
+- API client: axios
 
-Do not use `/` inside a Windows filename. A file such as `Bloomberg_Daily_04/22/2026.xlsx` is invalid as a single filename on Windows.
-
-Use either:
-- `C:\Users\Shantanu\Desktop\Shantanu\Daily_File\Bloomberg_Daily_04_22_2026.xlsx`
-- or a folder structure that separates the date into folders
-
-## Current Command
-
-```powershell
-.\.venv\Scripts\python.exe Bloomberg_Data\bloomberg_pull.py --input "C:\Path\To\Bloomberg_Daily_04_22_2026.xlsx" --date 2026-04-22
-```
-
-## Output Structure
+## Project Structure
 
 ```text
-Bloomberg_Data/
-|-- Daily_Snapshots/
-|-- Reports/
-`-- bloomberg_pull.py
+stock-rank-dashboard/
+|-- backend/
+|   |-- main.py
+|   `-- requirements.txt
+|-- Daily Data Files/
+|   `-- sample Excel inputs
+|-- frontend/
+|   |-- package.json
+|   |-- index.html
+|   |-- vite.config.js
+|   `-- src/
+|       |-- main.jsx
+|       |-- App.jsx
+|       |-- api.js
+|       |-- styles.css
+|       `-- components/
+|           |-- UploadPanel.jsx
+|           |-- KPICards.jsx
+|           |-- IndexSelector.jsx
+|           `-- RankingTable.jsx
+`-- README.md
 ```
 
-## Work Log
+## Backend Setup
 
-2026-04-22
-- Inspected the uploaded metadata workbook structure.
-- Confirmed the workbook contains 28 indices in one sheet using `Index_Clean`.
-- Mapped Python fields to the Excel logic:
-  `Company Name`, `CMP`, `FS`, `TS`, `Total`, `RSI`, `30WMA`, `ROCE FY26`, `ROE FY26`, `EPS 5Y CAGR`, `D/E`.
-- Implemented Top 10 ranking by `Total` within each index.
-- Generated a snapshot CSV successfully from the sample workbook.
-- Updated the script so the workbook path remains blank by default and is provided only at runtime.
+Use the existing virtual environment or create one.
 
-## Next Work
+Install backend dependencies:
 
-- Step 3: Compare today's snapshot with yesterday's snapshot.
-- Step 4: Generate an HTML email report for rank movement.
-- Step 5: Add Windows Task Scheduler setup instructions.
-- Step 6: Test each component individually, then combine them.
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+```
+
+Run the API:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Backend endpoint:
+
+- `POST /compare`
+
+Form fields:
+
+- `yesterday_file`
+- `today_file`
+
+## Frontend Setup
+
+Install frontend dependencies:
+
+```powershell
+cd frontend
+npm.cmd install
+```
+
+Run the React app:
+
+```powershell
+npm.cmd run dev
+```
+
+Default frontend URL:
+
+- `http://127.0.0.1:5173`
+
+The frontend calls the backend at:
+
+- `http://127.0.0.1:8000`
+
+You can override it with:
+
+```powershell
+$env:VITE_API_BASE_URL="http://127.0.0.1:8000"
+```
+
+## How To Use
+
+1. Open the frontend in the browser.
+2. Upload:
+   - yesterday Excel file
+   - today Excel file
+3. Click `Compare Files`.
+4. Select an index from the dropdown.
+5. Review:
+   - Top 10 table
+   - Bottom 10 table
+   - KPI cards for the selected index
+
+## Expected Excel Columns
+
+The backend looks for these logical fields:
+
+- `Company Name`
+- `Index_Clean`
+- `CMP`
+- `FS`
+- `TS`
+- `Total`
+- `RSI`
+- `30WMA` or `30 WMA`
+- `ROCE`
+- `ROE`
+- `EPS Growth`
+- `D/E`
+
+It is tolerant of:
+
+- extra spaces
+- grouped Excel headers
+- `FY25/FY26` style columns for `ROCE` and `ROE`
+- extra unused columns
+- sheet name differences
+
+The backend automatically detects the header row by finding a row containing:
+
+- `Company Name`
+- `Index_Clean`
+
+## Ranking Logic
+
+All ranking is done per `Index_Clean`.
+
+Comparison key:
+
+- `Index_Clean + Company Name`
+
+This means the same stock in multiple indices is treated separately.
+
+### Top Rank
+
+- Sort by `Total` descending
+- Highest score gets `Top Rank 1`
+- Next highest gets `Top Rank 2`
+
+### Bottom Rank
+
+- Sort by `Total` ascending
+- Lowest score gets `Bottom Rank 1`
+- Next lowest gets `Bottom Rank 2`
+
+### Top Change
+
+- If missing yesterday: `New Entry`
+- If today rank is smaller than yesterday rank: `Up by X`
+- If today rank is larger than yesterday rank: `Down by X`
+- If same: `Unchanged`
+
+### Bottom Change
+
+- If missing yesterday: `New Entry`
+- If today bottom rank is smaller than yesterday bottom rank: `Down by X`
+- If today bottom rank is larger than yesterday bottom rank: `Up by X`
+- If same: `Unchanged`
+
+## API Response Shape
+
+The backend returns:
+
+```json
+{
+  "indices": ["Bank Nifty", "Nifty 50"],
+  "data": {
+    "Bank Nifty": {
+      "summary": {
+        "stocks_in_index": 12,
+        "new_top10_entries": 2,
+        "new_bottom10_entries": 1,
+        "top10_unchanged": 3,
+        "bottom10_unchanged": 2
+      },
+      "top10": [],
+      "bottom10": []
+    }
+  }
+}
+```
+
+## Current Verification
+
+Verified locally:
+
+- backend imports successfully
+- backend ranking logic runs against the uploaded sample files
+- frontend dependencies install successfully
+- frontend production build completes successfully

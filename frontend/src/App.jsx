@@ -4,6 +4,7 @@ import UploadPanel from "./components/UploadPanel";
 import KPICards from "./components/KPICards";
 import IndexSelector from "./components/IndexSelector";
 import RankingTable from "./components/RankingTable";
+import ReportGenerator from "./components/ReportGenerator";
 
 const APP_TITLE = "Daily Stock Ranking Movement Dashboard";
 
@@ -69,6 +70,8 @@ export default function App() {
         onTodayChange={setTodayFile}
         onCompare={handleCompare}
       />
+
+      <ReportGenerator />
 
       {error ? <div className="error-banner">{error}</div> : null}
 

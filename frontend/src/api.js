@@ -10,9 +10,20 @@ export async function compareFiles({ yesterdayFile, todayFile }) {
   formData.append("today_file", todayFile);
 
   const response = await api.post("/compare", formData, {
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+  return response.data;
+}
+
+export async function generateReport({ reportFile, reportDate }) {
+  const formData = new FormData();
+  formData.append("report_file", reportFile);
+  formData.append("report_date", reportDate);
+
+  const response = await api.post("/generate-report", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    responseType: "blob",
   });
 
   return response.data;

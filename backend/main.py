@@ -6,7 +6,10 @@ from typing import Any
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from openpyxl import load_workbook
+
+from report_generator import generate_pdf
 
 
 app = FastAPI(title="ULJK Bloomberg Ranking API", version="1.0.0")
@@ -404,6 +407,28 @@ def build_index_payload(today_ranked: pd.DataFrame, yesterday_ranked: pd.DataFra
 @app.get("/")
 def root() -> dict[str, str]:
     return {"message": "ULJK Bloomberg Ranking API is running."}
+
+
+@app.post("/generate-report")
+async def generate_report(
+    report_file: UploadFile = File(...),
+    report_date: str = "Report",
+) -> StreamingResponse:
+    if not report_file.filename:
+        raise HTTPException(status_code=400, detail="Excel file is required.")
+    try:
+        file_bytes = await report_file.read()
+        pdf_bytes = generate_pdf(file_bytes, report_date)
+        filename = f"Stock_Report_{report_date}.pdf"
+        return StreamingResponse(
+            iter([pdf_bytes]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {exc}") from exc
 
 
 @app.post("/compare")

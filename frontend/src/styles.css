@@ -346,3 +346,82 @@ body {
   color: #8ca1b5;
   padding: 18px;
 }
+
+/* ── Report Generator Panel ─────────────────────────────────────────────── */
+.report-generator-panel {
+  padding-bottom: 14px;
+}
+
+.rg-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rg-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .rg-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rg-upload {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rg-date-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px dashed #3a526e;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.rg-date-input {
+  padding: 8px 10px;
+  background: #0d1824;
+  border: 1px solid #32475f;
+  color: #f5f8fc;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.rg-date-input:focus {
+  outline: none;
+  border-color: #f0a500;
+}
+
+.rg-date-hint {
+  font-size: 11px;
+  color: #5a7a94;
+}
+
+.rg-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.rg-button {
+  margin: 0;
+}
+
+.rg-success {
+  font-size: 12px;
+  color: #4ade80;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.rg-error {
+  margin-bottom: 0;
+}

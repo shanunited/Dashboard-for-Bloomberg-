@@ -13,9 +13,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from openpyxl import load_workbook
 
 try:
-    from .report_generator import generate_combined_pdf, generate_pdf
+    from .report_generator import generate_combined_pdf, generate_pdf, read_combined_stock_dataframe
 except ImportError:
-    from report_generator import generate_combined_pdf, generate_pdf
+    from report_generator import generate_combined_pdf, generate_pdf, read_combined_stock_dataframe
 
 
 app = FastAPI(title="ULJK Bloomberg Ranking API", version="1.0.0")
@@ -400,6 +400,62 @@ def build_index_rp_payload(dataframe: pd.DataFrame) -> dict[str, Any]:
     return {"kpis": kpis, "rows": rows}
 
 
+def build_sector_quick_glance_payload(dataframe: pd.DataFrame) -> dict[str, Any]:
+    sorted_by_total = dataframe.sort_values(
+        by=["total", "company_name"],
+        ascending=[False, True],
+        kind="stable",
+    )
+    weakest_by_total = dataframe.sort_values(
+        by=["total", "company_name"],
+        ascending=[True, True],
+        kind="stable",
+    )
+
+    kpis = {
+        "total_sectors": int(dataframe["index_clean"].nunique()),
+        "total_stocks": int(len(dataframe)),
+        "best_stock_overall": make_json_value(sorted_by_total.iloc[0]["company_name"]),
+        "weakest_stock_overall": make_json_value(weakest_by_total.iloc[0]["company_name"]),
+    }
+
+    def serialize_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
+        rows = []
+        for rank, (_, row) in enumerate(frame.iterrows(), start=1):
+            rows.append(
+                {
+                    "rank": rank,
+                    "company_name": make_json_value(row["company_name"]),
+                    "fs": make_json_value(row["fs"]),
+                    "ts": make_json_value(row["ts"]),
+                    "total": make_json_value(row["total"]),
+                }
+            )
+        return rows
+
+    sectors = []
+    for sector_name, sector_frame in dataframe.groupby("index_clean", sort=True):
+        top3 = sector_frame.sort_values(
+            by=["total", "company_name"],
+            ascending=[False, True],
+            kind="stable",
+        ).head(3)
+        bottom3 = sector_frame.sort_values(
+            by=["total", "company_name"],
+            ascending=[True, True],
+            kind="stable",
+        ).head(3)
+        sectors.append(
+            {
+                "sector": make_json_value(sector_name),
+                "top_stocks": serialize_rows(top3),
+                "bottom_stocks": serialize_rows(bottom3),
+            }
+        )
+
+    return {"kpis": kpis, "sectors": sectors}
+
+
 def clean_dataframe(file_bytes: bytes) -> pd.DataFrame:
     raw = read_workbook(file_bytes)
     column_map = resolve_columns(raw)
@@ -694,6 +750,21 @@ async def process_index_rp(index_rp_file: UploadFile | None = File(None)) -> dic
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - API safety
         raise HTTPException(status_code=500, detail=f"Index RP processing failed: {exc}") from exc
+
+
+@app.post("/sector-quick-glance")
+async def sector_quick_glance(stock_file: UploadFile | None = File(None)) -> dict[str, Any]:
+    if stock_file is None or not stock_file.filename:
+        raise HTTPException(status_code=400, detail="Daily Stock Dashboard Sheet is required.")
+
+    try:
+        file_bytes = await stock_file.read()
+        stock_data = read_combined_stock_dataframe(file_bytes)
+        return build_sector_quick_glance_payload(stock_data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - API safety
+        raise HTTPException(status_code=500, detail=f"Sector quick glance processing failed: {exc}") from exc
 
 
 @app.post("/compare")

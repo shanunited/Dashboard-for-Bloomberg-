@@ -6,6 +6,7 @@ import IndexSelector from "./components/IndexSelector";
 import RankingTable from "./components/RankingTable";
 import ReportGenerator from "./components/ReportGenerator";
 import IndexRpDashboard from "./components/IndexRpDashboard";
+import SectorQuickGlance from "./components/SectorQuickGlance";
 
 const APP_TITLE = "Daily Stock Ranking Movement Dashboard";
 
@@ -79,6 +80,13 @@ export default function App() {
         >
           Index RP Dashboard
         </button>
+        <button
+          className={`dashboard-toggle-button ${activeView === "sector-quick-glance" ? "active" : ""}`}
+          type="button"
+          onClick={() => setActiveView("sector-quick-glance")}
+        >
+          Sector Quick Glance
+        </button>
       </div>
 
       {activeView === "stock" ? (
@@ -127,8 +135,10 @@ export default function App() {
             </section>
           )}
         </>
-      ) : (
+      ) : activeView === "index-rp" ? (
         <IndexRpDashboard />
+      ) : (
+        <SectorQuickGlance initialFile={todayFile} />
       )}
     </div>
   );

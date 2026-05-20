@@ -52,3 +52,14 @@ export async function processIndexRp({ indexRpFile }) {
 
   return response.data;
 }
+
+export async function generateSectorQuickGlance({ stockFile }) {
+  const formData = new FormData();
+  formData.append("stock_file", stockFile);
+
+  const response = await api.post("/sector-quick-glance", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+  return response.data;
+}

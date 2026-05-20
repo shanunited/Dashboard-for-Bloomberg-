@@ -235,6 +235,12 @@ body {
   overflow-wrap: anywhere;
 }
 
+.quick-glance-kpi-value {
+  font-size: clamp(18px, 2vw, 30px);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
 .tables-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -459,4 +465,85 @@ body {
 
 .rg-error {
   margin-bottom: 0;
+}
+
+.quick-glance-controls {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.quick-glance-search {
+  min-width: 260px;
+  flex: 1;
+  padding: 10px 12px;
+  background: #0d1824;
+  border: 1px solid #32475f;
+  color: #f5f8fc;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.quick-glance-search:focus {
+  outline: none;
+  border-color: #f0a500;
+}
+
+.quick-glance-sort {
+  width: auto;
+  min-width: 240px;
+  margin: 0;
+}
+
+.quick-glance-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.quick-glance-sector-card {
+  overflow: hidden;
+}
+
+.quick-glance-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 14px;
+}
+
+.quick-glance-subtitle {
+  color: #f0a500;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.quick-glance-table-scroll {
+  max-height: none;
+}
+
+.quick-glance-table {
+  width: 100%;
+  min-width: 520px;
+}
+
+.quick-glance-table th,
+.quick-glance-table td {
+  min-width: 64px;
+}
+
+.quick-glance-table .company-cell {
+  min-width: 220px !important;
+  max-width: 220px;
+}
+
+@media (max-width: 900px) {
+  .quick-glance-pair {
+    grid-template-columns: 1fr;
+  }
 }

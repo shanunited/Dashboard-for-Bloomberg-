@@ -148,8 +148,8 @@ COMBINED_INDEX_COLS: dict[str, list[str]] = {
 }
 
 COMBINED_STOCK_COLS: dict[str, list[str]] = {
-    "index_clean": ["Index_Clean", "index_clean", "Index Clean", "INDEX_CLEAN"],
-    "company_name": ["Company Name", "company name", "Company", "COMPANY NAME"],
+    "index_clean": ["Index_Clean", "index_clean", "Index Clean", "INDEX_CLEAN", "Index", "Sector"],
+    "company_name": ["Company Name", "company name", "Company", "COMPANY NAME", "Stock Name"],
     "fs": ["FS", "Fundamental Score", "FUNDAMENTAL SCORE"],
     "ts": ["TS", "Technical Score", "TECHNICAL SCORE"],
     "total": ["Total", "TOTAL", "Final Score", "Final Total"],
@@ -627,19 +627,26 @@ def _read_stock_sheet_with_detected_header(file_bytes: bytes) -> pd.DataFrame:
     if raw.empty:
         raise ValueError("Empty stock sheet.")
 
-    required = {"company name", "index_clean", "total"}
-    preferred = {"fs", "ts"}
+    required_groups = [
+        {"company name", "company", "stock name"},
+        {"index_clean", "index clean", "index", "sector"},
+        {"total", "final score", "final total"},
+    ]
+    preferred_groups = [
+        {"fs", "fundamental score"},
+        {"ts", "technical score"},
+    ]
     best_row: int | None = None
     best_score = -1
 
     for row_index in range(min(10, len(raw))):
         values = {_header_key(cell) for cell in raw.iloc[row_index].tolist() if _norm(cell)}
-        if required.issubset(values):
-            score = len(values & preferred)
+        if all(values & group for group in required_groups):
+            score = sum(1 for group in preferred_groups if values & group)
             if score > best_score:
                 best_row = row_index
                 best_score = score
-            if preferred.issubset(values):
+            if score == len(preferred_groups):
                 break
 
     if best_row is None:

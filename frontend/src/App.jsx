@@ -5,6 +5,7 @@ import KPICards from "./components/KPICards";
 import IndexSelector from "./components/IndexSelector";
 import RankingTable from "./components/RankingTable";
 import ReportGenerator from "./components/ReportGenerator";
+import IndexRpDashboard from "./components/IndexRpDashboard";
 
 const APP_TITLE = "Daily Stock Ranking Movement Dashboard";
 
@@ -14,6 +15,7 @@ const sampleResponse = {
 };
 
 export default function App() {
+  const [activeView, setActiveView] = useState("stock");
   const [yesterdayFile, setYesterdayFile] = useState(null);
   const [todayFile, setTodayFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -62,48 +64,71 @@ export default function App() {
         </p>
       </header>
 
-      <UploadPanel
-        yesterdayFile={yesterdayFile}
-        todayFile={todayFile}
-        loading={loading}
-        onYesterdayChange={setYesterdayFile}
-        onTodayChange={setTodayFile}
-        onCompare={handleCompare}
-      />
+      <div className="dashboard-toggle" role="tablist" aria-label="Dashboard view">
+        <button
+          className={`dashboard-toggle-button ${activeView === "stock" ? "active" : ""}`}
+          type="button"
+          onClick={() => setActiveView("stock")}
+        >
+          Stock Dashboard
+        </button>
+        <button
+          className={`dashboard-toggle-button ${activeView === "index-rp" ? "active" : ""}`}
+          type="button"
+          onClick={() => setActiveView("index-rp")}
+        >
+          Index RP Dashboard
+        </button>
+      </div>
 
-      <ReportGenerator />
-
-      {error ? <div className="error-banner">{error}</div> : null}
-
-      {response.indices.length > 0 && currentIndexData ? (
+      {activeView === "stock" ? (
         <>
-          <div className="top-controls">
-            <IndexSelector
-              indices={response.indices}
-              selectedIndex={selectedIndex}
-              onChange={setSelectedIndex}
-            />
-          </div>
+          <UploadPanel
+            yesterdayFile={yesterdayFile}
+            todayFile={todayFile}
+            loading={loading}
+            onYesterdayChange={setYesterdayFile}
+            onTodayChange={setTodayFile}
+            onCompare={handleCompare}
+          />
 
-          <KPICards summary={currentIndexData.summary} />
+          <ReportGenerator />
 
-          <div className="tables-grid">
-            <RankingTable title="Top 10 Stocks" rows={currentIndexData.top10} type="top" />
-            <RankingTable
-              title="Bottom 10 Stocks"
-              rows={currentIndexData.bottom10}
-              type="bottom"
-            />
-          </div>
+          {error ? <div className="error-banner">{error}</div> : null}
+
+          {response.indices.length > 0 && currentIndexData ? (
+            <>
+              <div className="top-controls">
+                <IndexSelector
+                  indices={response.indices}
+                  selectedIndex={selectedIndex}
+                  onChange={setSelectedIndex}
+                />
+              </div>
+
+              <KPICards summary={currentIndexData.summary} />
+
+              <div className="tables-grid">
+                <RankingTable title="Top 10 Stocks" rows={currentIndexData.top10} type="top" />
+                <RankingTable
+                  title="Bottom 10 Stocks"
+                  rows={currentIndexData.bottom10}
+                  type="bottom"
+                />
+              </div>
+            </>
+          ) : (
+            <section className="empty-state panel">
+              <h2>Dashboard Waiting For Comparison</h2>
+              <p>
+                Upload two Excel files and click <strong>Compare Files</strong> to populate the
+                index dropdown, KPI cards, and ranking tables.
+              </p>
+            </section>
+          )}
         </>
       ) : (
-        <section className="empty-state panel">
-          <h2>Dashboard Waiting For Comparison</h2>
-          <p>
-            Upload two Excel files and click <strong>Compare Files</strong> to populate the
-            index dropdown, KPI cards, and ranking tables.
-          </p>
-        </section>
+        <IndexRpDashboard />
       )}
     </div>
   );

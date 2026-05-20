@@ -59,6 +59,31 @@ body {
   line-height: 1.45;
 }
 
+.dashboard-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.dashboard-toggle-button {
+  padding: 10px 14px;
+  border: 1px solid #243447;
+  background: #09111b;
+  color: #8ea3b8;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.dashboard-toggle-button.active {
+  border-color: #f0a500;
+  background: linear-gradient(180deg, #f0a500 0%, #ca8500 100%);
+  color: #11161d;
+}
+
 .panel {
   background: #09111b;
   border: 1px solid #243447;
@@ -98,6 +123,10 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
   padding: 14px;
+}
+
+.single-upload-grid {
+  grid-template-columns: minmax(320px, 520px);
 }
 
 .upload-box {
@@ -198,6 +227,12 @@ body {
   font-size: 30px;
   font-weight: 700;
   line-height: 1;
+}
+
+.index-rp-kpi-value {
+  font-size: clamp(18px, 2vw, 30px);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 
 .tables-grid {

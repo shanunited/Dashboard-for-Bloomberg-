@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import re
+from datetime import date
 from io import BytesIO
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from openpyxl import load_workbook
 
-from report_generator import generate_pdf
+try:
+    from .report_generator import generate_combined_pdf, generate_pdf
+except ImportError:
+    from report_generator import generate_combined_pdf, generate_pdf
 
 
 app = FastAPI(title="ULJK Bloomberg Ranking API", version="1.0.0")
@@ -21,6 +27,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    if request.url.path == "/index-rp":
+        for error in exc.errors():
+            if "index_rp_file" in error.get("loc", []):
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Index RP Excel file is required."},
+                )
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
 REQUIRED_ALIAS_MAP = {
@@ -53,11 +71,55 @@ NUMERIC_COLUMNS = [
     "d_e",
 ]
 
+INDEX_RP_ALIAS_MAP = {
+    "index_name": ["Index", "Index Name", "Sector", "Name"],
+    "ltp": ["LTP", "Rate", "Last Price", "CMP"],
+    "daily_rp_call": ["Daily RP Call", "Daily RP Calls"],
+    "weekly_rp_call": ["Weekly RP Call", "Weekly RP Calls"],
+    "rsi": ["RSI", "RSI 14D"],
+    "wma_30": ["30WMA", "30 WMA", "30WMA Value"],
+    "rsi_score": ["RSI SCORE", "RSI Score"],
+    "wma_30_score": ["30WMA SCORE", "30WMA Score", "30 WMA Score"],
+    "weekly_rp_score": ["MRS WEEKLY SCORE", "Weekly RP Score"],
+    "daily_rp_score": ["MRS DAILY SCORE", "Daily RP Score"],
+    "total": ["TOTAL", "Total", "Score"],
+}
+
+INDEX_RP_REQUIRED_FIELDS = [
+    "index_name",
+    "ltp",
+    "daily_rp_call",
+    "weekly_rp_call",
+    "rsi",
+    "wma_30",
+    "rsi_score",
+    "wma_30_score",
+    "weekly_rp_score",
+    "daily_rp_score",
+    "total",
+]
+
+INDEX_RP_NUMERIC_FIELDS = [
+    "ltp",
+    "rsi",
+    "rsi_score",
+    "wma_30_score",
+    "weekly_rp_score",
+    "daily_rp_score",
+    "total",
+]
+
 
 def normalize_text(value: Any) -> str:
     if value is None:
         return ""
     return " ".join(str(value).strip().split())
+
+
+def normalize_optional_text(value: Any) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return normalize_text(value)
 
 
 def canonical_key(value: Any) -> str:
@@ -188,6 +250,156 @@ def resolve_columns(dataframe: pd.DataFrame) -> dict[str, str]:
     return resolved
 
 
+def resolve_alias_columns(
+    dataframe: pd.DataFrame,
+    alias_map: dict[str, list[str]],
+    required_fields: list[str],
+) -> dict[str, str]:
+    normalized_lookup = {
+        normalize_text(column).lower(): column for column in dataframe.columns
+    }
+    canonical_lookup: dict[str, list[str]] = {}
+    for column in dataframe.columns:
+        canonical_lookup.setdefault(canonical_key(column), []).append(column)
+
+    resolved: dict[str, str] = {}
+    missing: list[str] = []
+
+    for output_name, aliases in alias_map.items():
+        match = None
+        for alias in aliases:
+            alias_key = normalize_text(alias).lower()
+            if alias_key in normalized_lookup:
+                match = normalized_lookup[alias_key]
+                break
+        if match is None:
+            for alias in aliases:
+                alias_key = canonical_key(alias)
+                if alias_key in canonical_lookup:
+                    match = canonical_lookup[alias_key][0]
+                    break
+        if match is None:
+            if output_name in required_fields:
+                missing.append(f"{output_name}: {', '.join(aliases)}")
+        else:
+            resolved[output_name] = match
+
+    if missing:
+        raise ValueError("Required columns missing from first sheet: " + "; ".join(missing))
+
+    return resolved
+
+
+def read_index_rp_sheet(file_bytes: bytes) -> pd.DataFrame:
+    try:
+        workbook = load_workbook(BytesIO(file_bytes), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ValueError("Invalid Excel format. Please upload a valid Excel workbook.") from exc
+
+    try:
+        sheet_names = workbook.sheetnames
+    finally:
+        workbook.close()
+
+    if not sheet_names:
+        raise ValueError("Workbook has no sheets.")
+
+    try:
+        dataframe = pd.read_excel(BytesIO(file_bytes), sheet_name=0)
+    except Exception as exc:
+        raise ValueError("Invalid Excel format. Please upload a valid Excel workbook.") from exc
+
+    dataframe = dataframe.dropna(how="all").reset_index(drop=True)
+    if dataframe.empty:
+        raise ValueError("First sheet is empty.")
+
+    dataframe.columns = [normalize_text(column) for column in dataframe.columns]
+    if all(str(column).startswith("Unnamed") for column in dataframe.columns):
+        raise ValueError("Required columns missing from first sheet.")
+
+    return dataframe
+
+
+def clean_index_rp_dataframe(file_bytes: bytes) -> pd.DataFrame:
+    raw = read_index_rp_sheet(file_bytes)
+    column_map = resolve_alias_columns(raw, INDEX_RP_ALIAS_MAP, INDEX_RP_REQUIRED_FIELDS)
+
+    cleaned = pd.DataFrame(
+        {
+            "index_name": raw[column_map["index_name"]],
+            "ltp": raw[column_map["ltp"]],
+            "daily_rp_call": raw[column_map["daily_rp_call"]],
+            "weekly_rp_call": raw[column_map["weekly_rp_call"]],
+            "rsi": raw[column_map["rsi"]],
+            "wma_30": raw[column_map["wma_30"]],
+            "rsi_score": raw[column_map["rsi_score"]],
+            "wma_30_score": raw[column_map["wma_30_score"]],
+            "weekly_rp_score": raw[column_map["weekly_rp_score"]],
+            "daily_rp_score": raw[column_map["daily_rp_score"]],
+            "total": raw[column_map["total"]],
+        }
+    )
+
+    cleaned["index_name"] = cleaned["index_name"].map(normalize_optional_text)
+    cleaned["daily_rp_call"] = cleaned["daily_rp_call"].map(lambda value: normalize_optional_text(value).upper())
+    cleaned["weekly_rp_call"] = cleaned["weekly_rp_call"].map(lambda value: normalize_optional_text(value).upper())
+    cleaned["wma_30"] = cleaned["wma_30"].map(lambda value: normalize_optional_text(value).title())
+
+    for column in INDEX_RP_NUMERIC_FIELDS:
+        cleaned[column] = pd.to_numeric(cleaned[column], errors="coerce")
+
+    cleaned = cleaned.dropna(subset=["index_name", "total"]).copy()
+    cleaned = cleaned[cleaned["index_name"] != ""].copy()
+    if cleaned.empty:
+        raise ValueError("First sheet does not contain any valid index rows.")
+
+    cleaned = cleaned.sort_values(
+        by=["total", "index_name"],
+        ascending=[False, True],
+        kind="stable",
+    ).reset_index(drop=True)
+
+    return cleaned
+
+
+def build_index_rp_payload(dataframe: pd.DataFrame) -> dict[str, Any]:
+    strongest = dataframe.iloc[0]["index_name"]
+    weakest = dataframe.sort_values(
+        by=["total", "index_name"],
+        ascending=[True, True],
+        kind="stable",
+    ).iloc[0]["index_name"]
+
+    kpis = {
+        "total_indexes": int(len(dataframe)),
+        "daily_buy_calls": int(dataframe["daily_rp_call"].eq("BUY").sum()),
+        "weekly_buy_calls": int(dataframe["weekly_rp_call"].eq("BUY").sum()),
+        "above_30wma": int(dataframe["wma_30"].str.upper().eq("ABOVE").sum()),
+        "strongest_index": make_json_value(strongest),
+        "weakest_index": make_json_value(weakest),
+    }
+
+    rows = []
+    for _, row in dataframe.iterrows():
+        rows.append(
+            {
+                "index_name": make_json_value(row["index_name"]),
+                "ltp": make_json_value(row["ltp"]),
+                "daily_rp_call": make_json_value(row["daily_rp_call"]),
+                "weekly_rp_call": make_json_value(row["weekly_rp_call"]),
+                "rsi": make_json_value(row["rsi"]),
+                "wma_30": make_json_value(row["wma_30"]),
+                "rsi_score": make_json_value(row["rsi_score"]),
+                "wma_30_score": make_json_value(row["wma_30_score"]),
+                "weekly_rp_score": make_json_value(row["weekly_rp_score"]),
+                "daily_rp_score": make_json_value(row["daily_rp_score"]),
+                "total": make_json_value(row["total"]),
+            }
+        )
+
+    return {"kpis": kpis, "rows": rows}
+
+
 def clean_dataframe(file_bytes: bytes) -> pd.DataFrame:
     raw = read_workbook(file_bytes)
     column_map = resolve_columns(raw)
@@ -288,6 +500,17 @@ def make_json_value(value: Any) -> Any:
     if hasattr(value, "item"):
         value = value.item()
     return value
+
+
+def extract_report_date(filename: str | None) -> str:
+    if filename:
+        match = re.search(r"(\d{1,2})[-_](\d{1,2})[-_](\d{2,4})", filename)
+        if match:
+            day, month, year = match.groups()
+            if len(year) == 2:
+                year = f"20{year}"
+            return f"{int(day):02d}-{int(month):02d}-{year}"
+    return date.today().strftime("%d-%m-%Y")
 
 
 def build_index_payload(today_ranked: pd.DataFrame, yesterday_ranked: pd.DataFrame) -> dict[str, Any]:
@@ -429,6 +652,48 @@ async def generate_report(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Report generation failed: {exc}") from exc
+
+
+@app.post("/generate-combined-report")
+async def generate_combined_report(
+    stock_file: UploadFile | None = File(None),
+    index_file: UploadFile | None = File(None),
+) -> StreamingResponse:
+    if stock_file is None or not stock_file.filename:
+        raise HTTPException(status_code=400, detail="Daily Stock Dashboard Sheet is required.")
+    if index_file is None or not index_file.filename:
+        raise HTTPException(status_code=400, detail="Daily Index Sheet is required.")
+
+    try:
+        stock_bytes = await stock_file.read()
+        index_bytes = await index_file.read()
+        report_date = extract_report_date(index_file.filename)
+        pdf_bytes = generate_combined_pdf(stock_bytes, index_bytes, report_date)
+        filename = f"Combined_Index_Stock_Report_{report_date}.pdf"
+        return StreamingResponse(
+            iter([pdf_bytes]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}") from exc
+
+
+@app.post("/index-rp")
+async def process_index_rp(index_rp_file: UploadFile | None = File(None)) -> dict[str, Any]:
+    if index_rp_file is None or not index_rp_file.filename:
+        raise HTTPException(status_code=400, detail="Index RP Excel file is required.")
+
+    try:
+        file_bytes = await index_rp_file.read()
+        index_rp_clean = clean_index_rp_dataframe(file_bytes)
+        return build_index_rp_payload(index_rp_clean)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - API safety
+        raise HTTPException(status_code=500, detail=f"Index RP processing failed: {exc}") from exc
 
 
 @app.post("/compare")

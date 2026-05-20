@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+from html import escape
 from typing import Any
 
 import pandas as pd
@@ -71,6 +72,10 @@ ST_NARR     = _ps("narr",     fontName="Helvetica",      fontSize=8,  textColor=
 ST_LEGEND   = _ps("legend",   fontName="Helvetica",      fontSize=9,  textColor=CTXT,  alignment=TA_LEFT, leading=13)
 ST_LEGKEY   = _ps("legkey",   fontName="Helvetica-Bold", fontSize=9,  textColor=CGOLD, alignment=TA_LEFT, leading=13)
 ST_COVBODY  = _ps("covbody",  fontName="Helvetica",      fontSize=10, textColor=CTXT,  alignment=TA_LEFT, leading=14)
+ST_TBLHDR   = _ps("tblhdr",   fontName="Helvetica-Bold", fontSize=6.5, textColor=CGOLD, alignment=TA_CENTER, leading=8)
+ST_TBLCELL  = _ps("tblcell",  fontName="Helvetica",      fontSize=6.3, textColor=CTXT,  alignment=TA_LEFT, leading=7.5)
+ST_TBLNUM   = _ps("tblnum",   fontName="Helvetica",      fontSize=6.3, textColor=CTXT,  alignment=TA_RIGHT, leading=7.5)
+ST_SMALLTITLE = _ps("smalltitle", fontName="Helvetica-Bold", fontSize=16, textColor=CW, alignment=TA_CENTER, spaceAfter=4)
 
 
 # ── Column alias map for the report ──────────────────────────────────────────
@@ -127,6 +132,28 @@ TECH_INDICATORS = [
     ("weekly_rs", "Weekly RS (52W)"),
     ("daily_rs",  "Daily RS (52W)"),
 ]
+
+COMBINED_INDEX_COLS: dict[str, list[str]] = {
+    "index_name": ["INDEX", "Index", "Index Name", "Sector", "Name"],
+    "ltp": ["Rate", "LTP", "Last Price", "CMP"],
+    "daily_rp_call": ["Daily RP Call", "Daily RP Calls"],
+    "weekly_rp_call": ["Weekly RP Call", "Weekly RP Calls"],
+    "rsi": ["RSI", "RSI 14D"],
+    "wma_30": ["30WMA", "30 WMA", "30WMA Value"],
+    "rsi_score": ["RSI SCORE", "RSI Score"],
+    "wma_30_score": ["30WMA SCORE", "30WMA Score", "30 WMA Score"],
+    "weekly_rp_score": ["MRS WEEKLY SCORE", "Weekly RP Score"],
+    "daily_rp_score": ["MRS DAILY SCORE", "Daily RP Score"],
+    "total": ["TOTAL", "Total", "Score"],
+}
+
+COMBINED_STOCK_COLS: dict[str, list[str]] = {
+    "index_clean": ["Index_Clean", "index_clean", "Index Clean", "INDEX_CLEAN"],
+    "company_name": ["Company Name", "company name", "Company", "COMPANY NAME"],
+    "fs": ["FS", "Fundamental Score", "FUNDAMENTAL SCORE"],
+    "ts": ["TS", "Technical Score", "TECHNICAL SCORE"],
+    "total": ["Total", "TOTAL", "Final Score", "Final Total"],
+}
 
 
 # ── Excel reading utilities (self-contained, no import from main.py) ──────────
@@ -538,6 +565,279 @@ def _section_banner(text: str, acc: colors.Color) -> Table:
 
 
 # ── Cover page ────────────────────────────────────────────────────────────────
+def _read_first_sheet(file_bytes: bytes, label: str) -> pd.DataFrame:
+    try:
+        wb = xl_load(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ValueError(f"Invalid {label} Excel file.") from exc
+    try:
+        sheet_names = wb.sheetnames
+    finally:
+        wb.close()
+    if not sheet_names:
+        raise ValueError(f"{label.capitalize()} workbook has no sheets.")
+    try:
+        df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0)
+    except Exception as exc:
+        raise ValueError(f"Invalid {label} Excel file.") from exc
+    df = df.dropna(how="all").reset_index(drop=True)
+    if df.empty:
+        raise ValueError(f"Empty {label} sheet.")
+    df.columns = [_norm(c) for c in df.columns]
+    return df
+
+
+def _require_columns(df: pd.DataFrame, alias_map: dict[str, list[str]], label: str) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+    missing: list[str] = []
+    for field, aliases in alias_map.items():
+        col = _resolve(df, aliases)
+        if col is None:
+            missing.append(f"{field}: {', '.join(aliases)}")
+        else:
+            resolved[field] = col
+    if missing:
+        raise ValueError(f"Missing required {label} columns: " + "; ".join(missing))
+    return resolved
+
+
+def _header_key(value: Any) -> str:
+    return _norm(value).lower()
+
+
+def _read_stock_sheet_with_detected_header(file_bytes: bytes) -> pd.DataFrame:
+    try:
+        wb = xl_load(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ValueError("Invalid stock Excel file.") from exc
+    try:
+        sheet_names = wb.sheetnames
+    finally:
+        wb.close()
+
+    if not sheet_names:
+        raise ValueError("Stock workbook has no sheets.")
+
+    try:
+        raw = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, header=None)
+    except Exception as exc:
+        raise ValueError("Invalid stock Excel file.") from exc
+
+    raw = raw.dropna(how="all").reset_index(drop=True)
+    if raw.empty:
+        raise ValueError("Empty stock sheet.")
+
+    required = {"company name", "index_clean", "total"}
+    preferred = {"fs", "ts"}
+    best_row: int | None = None
+    best_score = -1
+
+    for row_index in range(min(10, len(raw))):
+        values = {_header_key(cell) for cell in raw.iloc[row_index].tolist() if _norm(cell)}
+        if required.issubset(values):
+            score = len(values & preferred)
+            if score > best_score:
+                best_row = row_index
+                best_score = score
+            if preferred.issubset(values):
+                break
+
+    if best_row is None:
+        raise ValueError(
+            "Could not detect stock file header row. Expected columns like Company Name, Index_Clean, FS, TS, and Total."
+        )
+
+    headers = [_norm(value) or f"Unnamed_{i}" for i, value in enumerate(raw.iloc[best_row].tolist())]
+    data = raw.iloc[best_row + 1:].copy()
+    data.columns = _dedup(headers)
+    data = data.dropna(how="all").reset_index(drop=True)
+    if data.empty:
+        raise ValueError("Stock sheet does not contain any rows after the detected header.")
+    return data
+
+
+def _clean_call(value: Any) -> str:
+    return _norm(value).upper()
+
+
+def read_combined_index_dataframe(file_bytes: bytes) -> pd.DataFrame:
+    raw = _read_first_sheet(file_bytes, "index")
+    columns = _require_columns(raw, COMBINED_INDEX_COLS, "index")
+    df = pd.DataFrame({
+        "index_name": raw[columns["index_name"]],
+        "ltp": raw[columns["ltp"]],
+        "daily_rp_call": raw[columns["daily_rp_call"]],
+        "weekly_rp_call": raw[columns["weekly_rp_call"]],
+        "rsi": raw[columns["rsi"]],
+        "wma_30": raw[columns["wma_30"]],
+        "rsi_score": raw[columns["rsi_score"]],
+        "wma_30_score": raw[columns["wma_30_score"]],
+        "weekly_rp_score": raw[columns["weekly_rp_score"]],
+        "daily_rp_score": raw[columns["daily_rp_score"]],
+        "total": raw[columns["total"]],
+    })
+    df["index_name"] = df["index_name"].map(_norm)
+    df["daily_rp_call"] = df["daily_rp_call"].map(_clean_call)
+    df["weekly_rp_call"] = df["weekly_rp_call"].map(_clean_call)
+    df["wma_30"] = df["wma_30"].map(lambda x: _norm(x).title())
+    for col in ["ltp", "rsi", "rsi_score", "wma_30_score", "weekly_rp_score", "daily_rp_score", "total"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df[(df["index_name"] != "") & df["total"].notna()].copy()
+    if df.empty:
+        raise ValueError("Index sheet does not contain any valid index rows.")
+    return df.sort_values(["total", "index_name"], ascending=[False, True], kind="stable").reset_index(drop=True)
+
+
+def read_combined_stock_dataframe(file_bytes: bytes) -> pd.DataFrame:
+    raw = _read_stock_sheet_with_detected_header(file_bytes)
+    try:
+        columns = _require_columns(raw, COMBINED_STOCK_COLS, "stock")
+    except ValueError as exc:
+        raise ValueError(
+            "Could not detect stock file header row. Expected columns like Company Name, Index_Clean, FS, TS, and Total."
+        ) from exc
+    df = pd.DataFrame({
+        "index_clean": raw[columns["index_clean"]],
+        "company_name": raw[columns["company_name"]],
+        "fs": raw[columns["fs"]],
+        "ts": raw[columns["ts"]],
+        "total": raw[columns["total"]],
+    })
+    df["index_clean"] = df["index_clean"].map(_norm)
+    df["company_name"] = df["company_name"].map(_norm)
+    for col in ["fs", "ts", "total"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df[(df["index_clean"] != "") & (df["company_name"] != "") & df["total"].notna()].copy()
+    if df.empty:
+        raise ValueError("Stock sheet does not contain any valid stock rows.")
+    return df.sort_values(["index_clean", "total", "company_name"], ascending=[True, False, True], kind="stable")
+
+
+def _para(value: Any, style: ParagraphStyle = ST_TBLCELL) -> Paragraph:
+    return Paragraph(escape(str(value if value is not None else "")), style)
+
+
+def _fmt_compact(value: Any, decimals: int = 1) -> str:
+    if _isna(value):
+        return "-"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.{decimals}f}"
+
+
+def _compact_table(data: list[list[Any]], col_widths: list[float], header_rows: int = 1) -> Table:
+    table = Table(data, colWidths=col_widths, repeatRows=header_rows)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, header_rows - 1), CN2),
+        ("BACKGROUND", (0, header_rows), (-1, -1), CBG),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, CBDR),
+        ("BOX", (0, 0), (-1, -1), 0.5, CBDR),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return table
+
+
+def _combined_title(date_str: str) -> list:
+    title = Table(
+        [[Paragraph("ULJK Bloomberg Ranking System", ST_SMALLTITLE)],
+         [Paragraph("Combined Index &amp; Stock Daily Report", ST_CVRSUB)],
+         [Paragraph(f"Date: {escape(date_str)}", ST_COVBODY)]],
+        colWidths=[USABLE_W],
+    )
+    title.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), CN),
+        ("BOX", (0, 0), (-1, -1), 1.2, CGOLD),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    ]))
+    return [title, Spacer(1, 5 * mm)]
+
+
+def _index_summary_table(index_df: pd.DataFrame) -> Table:
+    headers = ["Rank", "Index Name", "LTP", "Daily", "Weekly", "RSI", "30WMA", "RSI S", "30WMA S", "W RP S", "D RP S", "Total"]
+    rows: list[list[Any]] = [[_para(h, ST_TBLHDR) for h in headers]]
+    for rank, (_, row) in enumerate(index_df.iterrows(), start=1):
+        rows.append([
+            _para(rank, ST_TBLNUM),
+            _para(row["index_name"]),
+            _para(_fmt_compact(row["ltp"], 2), ST_TBLNUM),
+            _para(row["daily_rp_call"]),
+            _para(row["weekly_rp_call"]),
+            _para(_fmt_compact(row["rsi"], 1), ST_TBLNUM),
+            _para(row["wma_30"]),
+            _para(_fmt_compact(row["rsi_score"], 0), ST_TBLNUM),
+            _para(_fmt_compact(row["wma_30_score"], 0), ST_TBLNUM),
+            _para(_fmt_compact(row["weekly_rp_score"], 0), ST_TBLNUM),
+            _para(_fmt_compact(row["daily_rp_score"], 0), ST_TBLNUM),
+            _para(_fmt_compact(row["total"], 0), ST_TBLNUM),
+        ])
+    widths = [USABLE_W * f for f in [0.045, 0.215, 0.085, 0.07, 0.075, 0.06, 0.065, 0.06, 0.075, 0.075, 0.075, 0.06]]
+    return _compact_table(rows, widths)
+
+
+def _stock_side_by_side_table(top3: pd.DataFrame, bottom3: pd.DataFrame) -> Table:
+    rows: list[list[Any]] = [[
+        _para("Rank", ST_TBLHDR), _para("Top 3 Stocks", ST_TBLHDR), _para("FS", ST_TBLHDR), _para("TS", ST_TBLHDR), _para("Total", ST_TBLHDR),
+        _para("Rank", ST_TBLHDR), _para("Bottom 3 Stocks", ST_TBLHDR), _para("FS", ST_TBLHDR), _para("TS", ST_TBLHDR), _para("Total", ST_TBLHDR),
+    ]]
+    for i in range(3):
+        t = top3.iloc[i] if i < len(top3) else {}
+        b = bottom3.iloc[i] if i < len(bottom3) else {}
+        rows.append([
+            _para(i + 1, ST_TBLNUM),
+            _para(t.get("company_name", "")),
+            _para(_fmt_compact(t.get("fs"), 1), ST_TBLNUM),
+            _para(_fmt_compact(t.get("ts"), 1), ST_TBLNUM),
+            _para(_fmt_compact(t.get("total"), 1), ST_TBLNUM),
+            _para(i + 1, ST_TBLNUM),
+            _para(b.get("company_name", "")),
+            _para(_fmt_compact(b.get("fs"), 1), ST_TBLNUM),
+            _para(_fmt_compact(b.get("ts"), 1), ST_TBLNUM),
+            _para(_fmt_compact(b.get("total"), 1), ST_TBLNUM),
+        ])
+    widths = [USABLE_W * f for f in [0.05, 0.225, 0.055, 0.055, 0.065, 0.05, 0.225, 0.055, 0.055, 0.065]]
+    return _compact_table(rows, widths)
+
+
+def generate_combined_pdf(stock_file_bytes: bytes, index_file_bytes: bytes, date_str: str) -> bytes:
+    index_df = read_combined_index_dataframe(index_file_bytes)
+    stock_df = read_combined_stock_dataframe(stock_file_bytes)
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(buf, pagesize=A4, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN, bottomMargin=FOOTER_H + 4 * mm)
+    frame = Frame(MARGIN, FOOTER_H + 3 * mm, USABLE_W, PAGE_H - MARGIN - FOOTER_H - 5 * mm, id="main")
+    doc.addPageTemplates([PageTemplate(id="combined", frames=[frame], onPage=lambda c, d: _add_footer(c, d, date_str))])
+    story: list = []
+    story.extend(_combined_title(date_str))
+    story.append(_section_banner("PERFORMING INDICES", CGNA))
+    story.append(Spacer(1, 2 * mm))
+    story.append(_index_summary_table(index_df.head(8)))
+    story.append(Spacer(1, 4 * mm))
+    story.append(_section_banner("WEAK INDICES", CRDA))
+    story.append(Spacer(1, 2 * mm))
+    weak = index_df.sort_values(["total", "index_name"], ascending=[True, True], kind="stable").head(8)
+    story.append(_index_summary_table(weak))
+    story.append(PageBreak())
+    for idx_name in sorted(stock_df["index_clean"].unique()):
+        sector_df = stock_df[stock_df["index_clean"] == idx_name]
+        top3 = sector_df.sort_values(["total", "company_name"], ascending=[False, True], kind="stable").head(3)
+        bottom3 = sector_df.sort_values(["total", "company_name"], ascending=[True, True], kind="stable").head(3)
+        story.append(_index_banner(idx_name))
+        story.append(Spacer(1, 2 * mm))
+        story.append(_stock_side_by_side_table(top3, bottom3))
+        story.append(Spacer(1, 5 * mm))
+    doc.build(story)
+    return buf.getvalue()
+
+
 def _cover_page(date_str: str, indices: list[str]) -> list:
     W = USABLE_W
     elems = []

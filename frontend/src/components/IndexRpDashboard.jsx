@@ -1,11 +1,6 @@
 import { useState } from "react";
 import { processIndexRp } from "../api";
 
-const emptyResponse = {
-  kpis: null,
-  rows: [],
-};
-
 function formatValue(value) {
   if (value === null || value === undefined || value === "") {
     return "--";
@@ -113,11 +108,9 @@ function IndexRpTable({ rows }) {
   );
 }
 
-export default function IndexRpDashboard() {
-  const [file, setFile] = useState(null);
+export default function IndexRpDashboard({ file, onFileChange, response, onResponseChange }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [response, setResponse] = useState(emptyResponse);
 
   async function handleProcess() {
     if (!file) {
@@ -130,7 +123,7 @@ export default function IndexRpDashboard() {
 
     try {
       const data = await processIndexRp({ indexRpFile: file });
-      setResponse(data);
+      onResponseChange(data);
     } catch (requestError) {
       const detail =
         requestError?.response?.data?.detail ||
@@ -157,7 +150,7 @@ export default function IndexRpDashboard() {
               type="file"
               accept=".xlsx,.xlsm,.xls"
               onChange={(event) => {
-                setFile(event.target.files?.[0] || null);
+                onFileChange(event.target.files?.[0] || null);
                 setError("");
               }}
             />

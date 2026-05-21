@@ -15,6 +15,16 @@ const sampleResponse = {
   data: {},
 };
 
+const emptyIndexRpResponse = {
+  kpis: null,
+  rows: [],
+};
+
+const emptyQuickGlanceResponse = {
+  kpis: null,
+  sectors: [],
+};
+
 export default function App() {
   const [activeView, setActiveView] = useState("stock");
   const [yesterdayFile, setYesterdayFile] = useState(null);
@@ -23,6 +33,12 @@ export default function App() {
   const [error, setError] = useState("");
   const [response, setResponse] = useState(sampleResponse);
   const [selectedIndex, setSelectedIndex] = useState("");
+  const [indexRpFile, setIndexRpFile] = useState(null);
+  const [indexRpResponse, setIndexRpResponse] = useState(emptyIndexRpResponse);
+  const [quickGlanceFile, setQuickGlanceFile] = useState(null);
+  const [quickGlanceResponse, setQuickGlanceResponse] = useState(emptyQuickGlanceResponse);
+  const [quickGlanceSearch, setQuickGlanceSearch] = useState("");
+  const [quickGlanceSortMode, setQuickGlanceSortMode] = useState("sector");
 
   useEffect(() => {
     if (!selectedIndex && response.indices.length > 0) {
@@ -136,9 +152,24 @@ export default function App() {
           )}
         </>
       ) : activeView === "index-rp" ? (
-        <IndexRpDashboard />
+        <IndexRpDashboard
+          file={indexRpFile}
+          onFileChange={setIndexRpFile}
+          response={indexRpResponse}
+          onResponseChange={setIndexRpResponse}
+        />
       ) : (
-        <SectorQuickGlance initialFile={todayFile} />
+        <SectorQuickGlance
+          file={quickGlanceFile}
+          onFileChange={setQuickGlanceFile}
+          initialFile={todayFile}
+          response={quickGlanceResponse}
+          onResponseChange={setQuickGlanceResponse}
+          search={quickGlanceSearch}
+          onSearchChange={setQuickGlanceSearch}
+          sortMode={quickGlanceSortMode}
+          onSortModeChange={setQuickGlanceSortMode}
+        />
       )}
     </div>
   );

@@ -1,11 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { generateSectorQuickGlance } from "../api";
 
-const emptyResponse = {
-  kpis: null,
-  sectors: [],
-};
-
 function formatValue(value) {
   if (value === null || value === undefined || value === "") {
     return "--";
@@ -84,19 +79,25 @@ function SectorCard({ sector }) {
   );
 }
 
-export default function SectorQuickGlance({ initialFile = null }) {
-  const [file, setFile] = useState(null);
+export default function SectorQuickGlance({
+  file,
+  onFileChange,
+  initialFile = null,
+  response,
+  onResponseChange,
+  search,
+  onSearchChange,
+  sortMode,
+  onSortModeChange,
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [response, setResponse] = useState(emptyResponse);
-  const [search, setSearch] = useState("");
-  const [sortMode, setSortMode] = useState("sector");
 
   useEffect(() => {
     if (initialFile && !file) {
-      setFile(initialFile);
+      onFileChange(initialFile);
     }
-  }, [initialFile, file]);
+  }, [initialFile, file, onFileChange]);
 
   const sectors = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -135,7 +136,7 @@ export default function SectorQuickGlance({ initialFile = null }) {
 
     try {
       const data = await generateSectorQuickGlance({ stockFile: file });
-      setResponse(data);
+      onResponseChange(data);
     } catch (requestError) {
       const detail =
         requestError?.response?.data?.detail ||
@@ -162,7 +163,7 @@ export default function SectorQuickGlance({ initialFile = null }) {
               type="file"
               accept=".xlsx,.xlsm,.xls"
               onChange={(event) => {
-                setFile(event.target.files?.[0] || null);
+                onFileChange(event.target.files?.[0] || null);
                 setError("");
               }}
             />
@@ -191,13 +192,13 @@ export default function SectorQuickGlance({ initialFile = null }) {
               className="quick-glance-search"
               type="search"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Search sector or stock"
             />
             <select
               className="index-select quick-glance-sort"
               value={sortMode}
-              onChange={(event) => setSortMode(event.target.value)}
+              onChange={(event) => onSortModeChange(event.target.value)}
             >
               <option value="sector">Sector Name</option>
               <option value="highest">Highest Top Stock Total</option>

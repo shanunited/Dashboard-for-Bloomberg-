@@ -499,51 +499,140 @@ body {
 
 .quick-glance-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .quick-glance-sector-card {
   overflow: hidden;
+  padding: 0;
 }
 
-.quick-glance-pair {
+.quick-glance-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #243447;
+  background: #0d1824;
+}
+
+.quick-glance-card-header h2 {
+  margin: 0;
+  color: #f5f8fc;
+  font-size: 13px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.quick-glance-card-header p {
+  margin: 4px 0 0;
+  color: #8ca1b5;
+  font-size: 11px;
+}
+
+.quick-glance-score-badge {
+  flex: 0 0 auto;
+  color: #f7c04a;
+  border: 1px solid rgba(240, 165, 0, 0.42);
+  background: rgba(240, 165, 0, 0.12);
+  padding: 4px 7px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.quick-glance-stack {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  padding: 14px;
+  gap: 8px;
+  padding: 10px;
+}
+
+.quick-glance-stock-section {
+  display: grid;
+  gap: 6px;
 }
 
 .quick-glance-subtitle {
-  color: #f0a500;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 8px;
 }
 
-.quick-glance-table-scroll {
-  max-height: none;
+.quick-glance-stock-section.positive .quick-glance-subtitle {
+  color: #7df59a;
 }
 
-.quick-glance-table {
-  width: 100%;
-  min-width: 520px;
+.quick-glance-stock-section.negative .quick-glance-subtitle {
+  color: #ff8f8f;
 }
 
-.quick-glance-table th,
-.quick-glance-table td {
-  min-width: 64px;
+.quick-glance-stock-list {
+  display: grid;
+  gap: 5px;
 }
 
-.quick-glance-table .company-cell {
-  min-width: 220px !important;
-  max-width: 220px;
+.quick-glance-stock-row {
+  border-left: 3px solid #32475f;
+  background: rgba(255, 255, 255, 0.018);
+  padding: 6px 7px;
+  min-width: 0;
+}
+
+.quick-glance-stock-section.positive .quick-glance-stock-row {
+  border-left-color: #2d994d;
+}
+
+.quick-glance-stock-section.negative .quick-glance-stock-row {
+  border-left-color: #b33333;
+}
+
+.quick-glance-stock-main {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+
+.quick-glance-rank {
+  color: #8ca1b5;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.quick-glance-company {
+  color: #f5f8fc;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-glance-metrics {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  padding-left: 24px;
+  color: #9db0c2;
+  font-size: 10px;
+}
+
+.quick-glance-total {
+  color: #f7c04a;
+  font-weight: 700;
+}
+
+@media (max-width: 1180px) {
+  .quick-glance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 900px) {
-  .quick-glance-pair {
+  .quick-glance-grid {
     grid-template-columns: 1fr;
   }
 }

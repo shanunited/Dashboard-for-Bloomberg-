@@ -11,12 +11,49 @@ function formatValue(value) {
   return value;
 }
 
-function KpiCards({ kpis }) {
+function formatScore(value) {
+  if (value === null || value === undefined || value === "") {
+    return "--";
+  }
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return value;
+  }
+  return Number.isInteger(number) ? String(number) : number.toFixed(2);
+}
+
+function normalizeKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/^nifty\s+/i, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function findIndexScore(sectorName, indexRpRows) {
+  const sectorKey = normalizeKey(sectorName);
+  if (!sectorKey) {
+    return null;
+  }
+
+  const exactMatch = indexRpRows.find((row) => normalizeKey(row.index_name) === sectorKey);
+  if (exactMatch) {
+    return exactMatch.total;
+  }
+
+  const partialMatch = indexRpRows.find((row) => {
+    const indexKey = normalizeKey(row.index_name);
+    return indexKey.includes(sectorKey) || sectorKey.includes(indexKey);
+  });
+  return partialMatch?.total ?? null;
+}
+
+function KpiCards({ summary }) {
   const items = [
-    ["Total Sectors", kpis?.total_sectors ?? 0],
-    ["Total Stocks", kpis?.total_stocks ?? 0],
-    ["Best Stock Overall", kpis?.best_stock_overall ?? "--"],
-    ["Weakest Stock Overall", kpis?.weakest_stock_overall ?? "--"],
+    ["Total Sectors", summary?.total_sectors ?? 0],
+    ["Total Stocks", summary?.total_stocks ?? 0],
+    ["Best Performing Sector", summary?.best_sector ?? "--"],
+    ["Best Stock Overall", summary?.best_stock_overall ?? "--"],
+    ["Weakest Stock Overall", summary?.weakest_stock_overall ?? "--"],
   ];
 
   return (
@@ -31,35 +68,26 @@ function KpiCards({ kpis }) {
   );
 }
 
-function MiniStockTable({ title, rows }) {
+function StockList({ title, rows, tone }) {
   return (
-    <section className="quick-glance-table-wrap">
+    <section className={`quick-glance-stock-section ${tone}`}>
       <div className="quick-glance-subtitle">{title}</div>
-      <div className="table-wrapper quick-glance-table-scroll">
-        <table className="ranking-table quick-glance-table">
-          <thead>
-            <tr>
-              <th>Rank</th>
-              <th>Company</th>
-              <th>FS</th>
-              <th>TS</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={`${title}-${row.rank}-${row.company_name}`}>
-                <td>{formatValue(row.rank)}</td>
-                <td className="company-cell" title={row.company_name || ""}>
-                  <span className="company-text">{formatValue(row.company_name)}</span>
-                </td>
-                <td>{formatValue(row.fs)}</td>
-                <td>{formatValue(row.ts)}</td>
-                <td>{formatValue(row.total)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="quick-glance-stock-list">
+        {rows.map((row) => (
+          <div className="quick-glance-stock-row" key={`${title}-${row.rank}-${row.company_name}`}>
+            <div className="quick-glance-stock-main">
+              <span className="quick-glance-rank">{row.rank}</span>
+              <span className="quick-glance-company" title={row.company_name || ""}>
+                {formatValue(row.company_name)}
+              </span>
+            </div>
+            <div className="quick-glance-metrics">
+              <span>FS: {formatValue(row.fs)}</span>
+              <span>TS: {formatValue(row.ts)}</span>
+              <span className="quick-glance-total">Total: {formatValue(row.total)}</span>
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -68,12 +96,16 @@ function MiniStockTable({ title, rows }) {
 function SectorCard({ sector }) {
   return (
     <section className="panel quick-glance-sector-card">
-      <div className="panel-header compact">
-        <h2>{sector.sector}</h2>
+      <div className="quick-glance-card-header">
+        <div>
+          <h2>{sector.sector}</h2>
+          <p>{sector.index_score !== null ? "Index Total" : "Avg Total"}: {formatScore(sector.display_score)}</p>
+        </div>
+        <span className="quick-glance-score-badge">{formatScore(sector.display_score)}</span>
       </div>
-      <div className="quick-glance-pair">
-        <MiniStockTable title="Top 3 Stocks" rows={sector.top_stocks} />
-        <MiniStockTable title="Bottom 3 Stocks" rows={sector.bottom_stocks} />
+      <div className="quick-glance-stack">
+        <StockList title="Top 3 Stocks" rows={sector.top_stocks} tone="positive" />
+        <StockList title="Bottom 3 Stocks" rows={sector.bottom_stocks} tone="negative" />
       </div>
     </section>
   );
@@ -85,6 +117,7 @@ export default function SectorQuickGlance({
   initialFile = null,
   response,
   onResponseChange,
+  indexRpRows = [],
   search,
   onSearchChange,
   sortMode,
@@ -101,7 +134,16 @@ export default function SectorQuickGlance({
 
   const sectors = useMemo(() => {
     const query = search.trim().toLowerCase();
-    let filtered = response.sectors.filter((sector) => {
+    let filtered = response.sectors.map((sector) => {
+      const indexScore = findIndexScore(sector.sector, indexRpRows);
+      const fallbackScore = sector.sort_score ?? sector.sector_score ?? 0;
+      return {
+        ...sector,
+        index_score: indexScore,
+        display_score: indexScore ?? fallbackScore,
+        performance_score: indexScore ?? fallbackScore,
+      };
+    }).filter((sector) => {
       if (!query) {
         return true;
       }
@@ -113,17 +155,17 @@ export default function SectorQuickGlance({
     });
 
     filtered = [...filtered].sort((a, b) => {
-      if (sortMode === "highest") {
-        return (b.top_stocks[0]?.total ?? -Infinity) - (a.top_stocks[0]?.total ?? -Infinity);
+      if (sortMode === "weakest") {
+        return (a.performance_score ?? Infinity) - (b.performance_score ?? Infinity);
       }
-      if (sortMode === "lowest") {
-        return (a.bottom_stocks[0]?.total ?? Infinity) - (b.bottom_stocks[0]?.total ?? Infinity);
+      if (sortMode === "sector") {
+        return a.sector.localeCompare(b.sector);
       }
-      return a.sector.localeCompare(b.sector);
+      return (b.performance_score ?? -Infinity) - (a.performance_score ?? -Infinity);
     });
 
     return filtered;
-  }, [response.sectors, search, sortMode]);
+  }, [response.sectors, indexRpRows, search, sortMode]);
 
   async function handleGenerate() {
     if (!file) {
@@ -153,7 +195,7 @@ export default function SectorQuickGlance({
       <section className="panel upload-panel">
         <div className="panel-header">
           <h2>Sector Quick Glance</h2>
-          <p>View Top 3 and Bottom 3 stocks across all sectors without selecting each index manually.</p>
+          <p>Best-performing sectors first, with Top 3 and Bottom 3 stocks in each sector.</p>
         </div>
 
         <div className="upload-grid single-upload-grid">
@@ -185,7 +227,7 @@ export default function SectorQuickGlance({
 
       {response.sectors.length > 0 ? (
         <>
-          <KpiCards kpis={response.kpis} />
+          <KpiCards summary={response.summary || response.kpis} />
 
           <section className="panel quick-glance-controls">
             <input
@@ -200,9 +242,9 @@ export default function SectorQuickGlance({
               value={sortMode}
               onChange={(event) => onSortModeChange(event.target.value)}
             >
+              <option value="performance">Best Performing Sectors</option>
               <option value="sector">Sector Name</option>
-              <option value="highest">Highest Top Stock Total</option>
-              <option value="lowest">Lowest Bottom Stock Total</option>
+              <option value="weakest">Weakest Sectors</option>
             </select>
           </section>
 

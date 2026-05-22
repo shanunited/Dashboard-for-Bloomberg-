@@ -21,7 +21,7 @@ const emptyIndexRpResponse = {
 };
 
 const emptyQuickGlanceResponse = {
-  kpis: null,
+  summary: null,
   sectors: [],
 };
 
@@ -38,7 +38,7 @@ export default function App() {
   const [quickGlanceFile, setQuickGlanceFile] = useState(null);
   const [quickGlanceResponse, setQuickGlanceResponse] = useState(emptyQuickGlanceResponse);
   const [quickGlanceSearch, setQuickGlanceSearch] = useState("");
-  const [quickGlanceSortMode, setQuickGlanceSortMode] = useState("sector");
+  const [quickGlanceSortMode, setQuickGlanceSortMode] = useState("performance");
 
   useEffect(() => {
     if (!selectedIndex && response.indices.length > 0) {
@@ -165,6 +165,7 @@ export default function App() {
           initialFile={todayFile}
           response={quickGlanceResponse}
           onResponseChange={setQuickGlanceResponse}
+          indexRpRows={indexRpResponse.rows}
           search={quickGlanceSearch}
           onSearchChange={setQuickGlanceSearch}
           sortMode={quickGlanceSortMode}

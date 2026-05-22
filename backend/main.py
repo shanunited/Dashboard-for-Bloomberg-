@@ -412,9 +412,18 @@ def build_sector_quick_glance_payload(dataframe: pd.DataFrame) -> dict[str, Any]
         kind="stable",
     )
 
-    kpis = {
+    sector_stats = (
+        dataframe.groupby("index_clean", sort=True)["total"]
+        .agg(["mean", "max", "min", "count"])
+        .reset_index()
+        .sort_values(["mean", "index_clean"], ascending=[False, True], kind="stable")
+    )
+    best_sector = sector_stats.iloc[0]["index_clean"]
+
+    summary = {
         "total_sectors": int(dataframe["index_clean"].nunique()),
         "total_stocks": int(len(dataframe)),
+        "best_sector": make_json_value(best_sector),
         "best_stock_overall": make_json_value(sorted_by_total.iloc[0]["company_name"]),
         "weakest_stock_overall": make_json_value(weakest_by_total.iloc[0]["company_name"]),
     }
@@ -434,7 +443,10 @@ def build_sector_quick_glance_payload(dataframe: pd.DataFrame) -> dict[str, Any]
         return rows
 
     sectors = []
-    for sector_name, sector_frame in dataframe.groupby("index_clean", sort=True):
+    grouped = {sector_name: sector_frame for sector_name, sector_frame in dataframe.groupby("index_clean", sort=True)}
+    for _, stat_row in sector_stats.iterrows():
+        sector_name = stat_row["index_clean"]
+        sector_frame = grouped[sector_name]
         top3 = sector_frame.sort_values(
             by=["total", "company_name"],
             ascending=[False, True],
@@ -448,12 +460,17 @@ def build_sector_quick_glance_payload(dataframe: pd.DataFrame) -> dict[str, Any]
         sectors.append(
             {
                 "sector": make_json_value(sector_name),
+                "sector_score": make_json_value(stat_row["mean"]),
+                "sort_score": make_json_value(stat_row["mean"]),
+                "best_score": make_json_value(stat_row["max"]),
+                "weakest_score": make_json_value(stat_row["min"]),
+                "stock_count": make_json_value(stat_row["count"]),
                 "top_stocks": serialize_rows(top3),
                 "bottom_stocks": serialize_rows(bottom3),
             }
         )
 
-    return {"kpis": kpis, "sectors": sectors}
+    return {"summary": summary, "kpis": summary, "sectors": sectors}
 
 
 def clean_dataframe(file_bytes: bytes) -> pd.DataFrame:
